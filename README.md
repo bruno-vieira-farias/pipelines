@@ -4,18 +4,30 @@ Este repositório é baseado na documentação: [Build a Node.js and React app w
 
 ![alt tag](https://github.com/fiapfullstack/pipelines/raw/master/img-src/jenkins.png)
 
+**Parte 1**
+
 O repositório contém um aplicativo Node.js e React simples que gera
 uma página com o conteúdo "Bem-vindo ao React" e com um teste para
 verificar se o aplicativo é renderizado conforme esperado crianda nosso primeiro pipeline.
 
-1. [Requisitos](#Requisitos)
-2. [Início](#Início)
-3. [Desbloqueio](#Desbloqueio)
-4. [Pipeline](#Pipeline)
-5. [Sessões](#Sessões)
-6. [Running](#Running)
-7. [Test](#Test)
-8. [Delivery](#Delivery)
+01. [Requisitos](#Requisitos)
+02. [Início](#Início)
+03. [Desbloqueio](#Desbloqueio)
+04. [Pipeline](#Pipeline)
+05. [Sessões](#Sessões)
+06. [Running](#Running)
+07. [Test](#Test)
+08. [Delivery](#Delivery)
+09. [ProjetosMultiBranch](#ProjetosMultiBranch)
+10. [MultiBranchPipeline](#MultiBranchPipeline)
+11. [MultiBranchDeploy](#MultiBranchDeploy)
+
+---
+
+
+**Parte 2**
+
+[Integração com o Repo (GitHub Flow)](https://github.com/FiapFullStack/pipelines/blob/master/flows/GITHUBFLOW.md)
 
 ---
 
@@ -187,6 +199,7 @@ Este fluxo possui um único **stage** chamado Build, e um único agente chamado 
 ```sh
         stage('Test') {
             steps {
+                sh 'chmod +x ./jenkins/scripts/test.sh'                        
                 sh './jenkins/scripts/test.sh'
             }
         }
@@ -232,10 +245,9 @@ pipeline {
 ```sh
        stage('Deliver') {
             steps {
-                sh 'chmod +x ./jenkins/scripts/deliver.sh'
+                sh 'chmod -R +x ./jenkins/scripts'
                 sh './jenkins/scripts/deliver.sh'
                 input message: 'Finished using the web site? (Click "Proceed" to continue)'
-                sh 'chmod +x ./jenkins/scripts/kill.sh'
                 sh './jenkins/scripts/kill.sh'
             }
         }
@@ -272,10 +284,9 @@ pipeline {
         }
         stage('Deliver') { 
             steps {
-                sh 'chmod +x ./jenkins/scripts/deliver.sh'
+                sh 'chmod -R +x ./jenkins/scripts'
                 sh './jenkins/scripts/deliver.sh'
                 input message: 'Finished using the web site? (Click "Proceed" to continue)'
-                sh 'chmod +x ./jenkins/scripts/kill.sh'
                 sh './jenkins/scripts/kill.sh'
             }
         }
@@ -284,6 +295,272 @@ pipeline {
 ```
 
 8.3 Durante a entrega, enquanto não clicarmos na opção Proceed a página ficará acessível na URL do CI na porta 3000;
+
+---
+
+# Multibranch Pipeline
+
+Nesta etapa ampliaremos a configuração do projeto para um modelo com multi branchs no processo de desenvolvimento;
+
+Trabalhar com multiplas brancs permite a implantação de fluxos mais complexos baseados em workflows como [GitFlow](https://nvie.com/posts/a-successful-git-branching-model/) e [GitlabFlow](https://about.gitlab.com/blog/2016/10/25/gitlab-workflow-an-overview/);
+
+
+## ProjetosMultiBranch <a name="ProjetosMultiBranch"></a>
+
+**Crie o seu pipeline utilizando o Blue Ocean**
+
+9.3 Após a criação das branchs volte a solução de CI, clique em **'Open Blue Ocean'** no painel a esquerda;
+
+9.4 Na sessão **'Welcome to Jenkins'**, no centro da interface do Blue Ocean, clique em **'Create a new Pipeline'** para iniciar o assistente;
+
+9.5 Na opção **'Where do you store your code?'** selecione **'Git'** (Não utilize a opção GitHub);
+
+![alt tag](https://github.com/fiapfullstack/pipelines/raw/master/img-src/05.PNG)
+
+
+9.6 No campo **'Repository URL'**, especifique o repositório remoto na sua conta Git;
+
+9.7 Clique em **'Save'** ao finalizar o processo;
+
+9.8 Por padrão ao criar pipelines utilizando o blue ocean ele automaticamente interpreta que o modelo de implantação pode ser executado com multiplas branchs, isso ocorrerá a partir da existência de novas branchs com arquivos de Jenkinsfile;
+
+![alt tag](https://github.com/fiapfullstack/pipelines/raw/master/img-src/05.PNG)
+
+> Se for necessário excluir uma branch do fluxo basta que ela não possua um arquivo Jenkinsfile ou que ele seja removido, utilizando recursos como o arquivo .gitignore, Se ao criar um projeto de Pipeline no Blue Ocean o Jenkinsfile não existir mas for adicionado posteriormente basta utilizar o recurso **'Scan Multibranch Pipeline Now'** na home do projeto; 
+
+---
+
+## MultiBranchPipeline <a name="MultiBranchPipeline"></a> 
+
+**"Adicione etapas de entrega e implantação do seu Pipeline"**
+
+10.1 Usando a sua IDE ou a interface do GitHub edite o seu arquivo Jenkinsfile **na branch master** alterando o stage de execução do pipeline:
+
+```sh
+    agent {
+        docker {
+            image 'node:12-alpine'
+            args '-p 3000:3000 -p 5000:5000'
+        }
+    }
+    environment { 
+        CI = 'true'
+    }
+```
+
+> Esta alteração consiste em adicionar a porta de produção do node no fluxo (Internamente é a porta 5000) que será utilizada nas etapas a seguir;
+
+10.2 Substitua o antigo stage Deliver pelo modelo abaixo:
+
+```sh
+        stage('Deliver for development') {
+            when {
+                branch 'development'
+            }
+            steps {
+                sh 'chmod +x ./jenkins/scripts/deliver.sh'
+                sh './jenkins/scripts/deliver.sh'
+                input message: 'Finished using the web site? (Click "Proceed" to continue)'
+                sh 'chmod +x ./jenkins/scripts/kill.sh'
+                sh './jenkins/scripts/kill.sh'
+            }
+        }
+```
+
+No modelo de multiplas branchs a alteração permitirá criar um estágio cuja execução é condicionada a commits na branch development;
+
+> Se o valor da condição definida na função when no início do stage corresponder ao nome da branch na qual o Jenkins está executando a compilação, o estágio declarado será executado, essa abordagem permite estruturar tarefas distintas para o ambiente de desenvolvimento e de produção.
+
+
+10.3 A versão atual do seu arquivo de pipeline possuirá um layout similar ao modelo abaixo:
+
+```sh
+pipeline {
+    agent {
+        docker {
+            image 'node:12-alpine'
+            args '-p 3000:3000 -p 5000:5000'
+        }
+    }
+    environment { 
+        CI = 'true'
+    }
+    stages {
+        stage('Build') {
+            steps {
+                sh 'npm install'
+            }
+        }
+        stage('Test') {
+            steps {
+                sh 'chmod +x ./jenkins/scripts/test.sh'            
+                sh './jenkins/scripts/test.sh'
+            }
+        }
+        stage('Deliver for development') {
+            when {
+                branch 'development'
+            }
+            steps {
+                sh 'chmod +x ./jenkins/scripts/deliver.sh'
+                sh './jenkins/scripts/deliver.sh'
+                input message: 'Finished using the web site? (Click "Proceed" to continue)'
+                sh 'chmod +x ./jenkins/scripts/kill.sh'
+                sh './jenkins/scripts/kill.sh'
+            }
+        }        
+    }
+}
+```
+
+10.4 Agora crie uma nova branch de desenvolvimento para que possamos atuar com multiplas branchs e testar a primeira condição:
+
+Na execução pelo terminal:
+
+```sh
+git branch development
+```
+
+10.5 Para que o plugin identifique a nova branch volte a página principal do CI, clique sobre o Job criado e no painel no canto esquerdo da tela escolha a opção **'"Scan Multibranch Pipeline Now"'**
+
+É possível confirmar se o CI identificou a nova branch verificando o log no botão abaixo da opção utilizada:
+
+
+![alt tag](https://github.com/fiapfullstack/pipelines/raw/master/img-src/06.PNG)
+
+10.6 Após a alteração volte ao Blue Ocean e execute um novo Job na branch master, para isso clique em **'Branchs'** no canto superior direito para acessar a lista das branchs do seu projeto de Pipeline, existirá um job em execução relativo a branch development.
+
+10.5 Para testar a configuração inicie o job a partir da branch master clicando na opção **'Run'** na linha da branch master no Pipeline;
+
+![alt tag](https://github.com/fiapfullstack/pipelines/raw/master/img-src/07.PNG)
+
+
+---
+
+## MultiBranchDeploy <a name="MultiBranchDeploy"></a> 
+
+**"Etapa final com o deploy da aplicação"**
+
+Será necessário adicionar o novo script para deploy em produção no diretório jenkins/scripts no seu repositório Git:
+
+11.1 Crie o arquivo jenkins/scripts/deployment.sh com o conteúdo abaixo:
+
+```sh
+#!/usr/bin/env sh
+set -x
+npm run build
+set +x
+
+echo 'The following "npm" command downloads and installs the npm serve module'
+set -x
+npm install serve
+set +x
+
+echo 'The "serve" command has a trailing ampersand so that the command runs'
+echo 'as a background process (i.e. asynchronously). Otherwise, this command'
+echo 'can pause running builds of CI/CD applications indefinitely.'
+
+set -x
+./node_modules/serve/bin/serve.js -c 0 -s build &
+sleep 1
+echo $! > .pidfile
+set +x
+
+echo 'Now...'
+echo 'Visit http://localhost:5000 to see your Node.js/React application in action.'
+echo '(This is why you specified the "args ''-p 5000:5000''" parameter)'
+```
+
+11.2 Além da alteração anterior adicione um segundo estágio que será utilizado para a entrega em produção, essa configuração será aplicada a branch master e em seguida adicionaremos o mesm oconteúdo nas branchs development e production
+
+```sh
+        stage('Deploy for production') {
+            when {
+                branch 'production'
+            }
+            steps {
+                sh 'chmod +x ./jenkins/scripts/deployment.sh'
+                sh './jenkins/scripts/deployment.sh'
+                input message: 'Finished with your production version? (Click "Proceed" to continue)'
+                sh 'chmod +x ./jenkins/scripts/kill.sh'
+                sh './jenkins/scripts/kill.sh'                
+            }
+        } 
+```
+
+11.3 A versão final do seu arquivo de pipeline possuirá um layout similar ao modelo abaixo:
+
+```sh
+pipeline {
+    agent {
+        docker {
+            image 'node:12-alpine'
+            args '-p 3000:3000 -p 5000:5000'
+        }
+    }
+    environment { 
+        CI = 'true'
+    }
+    stages {
+        stage('Build') {
+            steps {
+                sh 'npm install'
+            }
+        }
+        stage('Test') {
+            steps {
+                sh 'chmod +x ./jenkins/scripts/test.sh'            
+                sh './jenkins/scripts/test.sh'
+            }
+        }
+        stage('Deliver for development') {
+            when {
+                branch 'development'
+            }
+            steps {
+                sh 'chmod +x ./jenkins/scripts'
+                sh './jenkins/scripts/deliver.sh'
+                input message: 'Finished using the web site? (Click "Proceed" to continue)'
+                sh './jenkins/scripts/kill.sh'
+            }
+        }
+        stage('Deploy for production') {
+            when {
+                branch 'production'
+            }
+            steps {
+                sh 'chmod +x ./jenkins/scripts/deployment.sh'
+                sh './jenkins/scripts/deployment.sh'
+                input message: 'Finished with your production version? (Click "Proceed" to continue)'
+                sh 'chmod +x ./jenkins/scripts/kill.sh'
+                sh './jenkins/scripts/kill.sh'                
+            }
+        }        
+    }
+}
+
+```
+
+
+11.4 Voltando ao repositório Git faça atualize os arquivos Jenkinfile de acordo com as mudanças que executamos no arquivo disponível no repositório principal.
+
+```sh
+git checkout development
+git merge master
+#
+git checkout production
+git push
+```
+
+11.5 Testando o modelo completo, nesta etapa execute o job na branch de desenvolvimento:
+
+> Como você está construindo a aplicação em uma branch diferente, a etapa de instalação do npm exigirá alguns minutos para que o npm faça o download das dependências necessárias para executar o  Node.js e React;
+
+11.6 Ao final do processo acesse a página do CI na porta 3000 para verificar a aplicação Node rodando em modo de desenvolvimento e finalize a aplicação pleo CI clicando na opção "Proceed";
+
+![alt tag](https://github.com/fiapfullstack/pipelines/raw/master/img-src/08.PNG)
+
+11.7 Finalmente faça um novo teste iniciando o Job a partir da branch "Production";
 
 ---
 
